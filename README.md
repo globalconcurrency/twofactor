@@ -70,7 +70,7 @@ import github.com/sec51/twofactor
 2- Instanciate the `totp` object via:
 
 ```
-	otp, err := twofactor.NewTOTP("info@sec51.com", "Sec51", crypto.SHA1, 8)	
+	otp, err := twofactor.NewTOTP("info@sec51.com", "Sec51", crypto.SHA1, 8, 30)	
 	if err != nil {
 		return err
 	}

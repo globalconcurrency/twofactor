@@ -33,8 +33,8 @@ const (
 )
 
 var (
-	initializationFailedError = errors.New("Totp has not been initialized correctly")
-	LockDownError             = errors.New("The verification is locked down, because of too many trials.")
+	errorInitializationFailed = errors.New("totp has not been initialized correctly")
+	errorLockDown             = errors.New("the verification is locked down, because of too many trials")
 )
 
 // WARNING: The `Totp` struct should never be instantiated manually!
@@ -80,13 +80,13 @@ func (otp *Totp) getIntCounter() uint64 {
 // it automatically generates a secret key using the golang crypto rand package. If there is not enough entropy the function returns an error
 // The key is not encrypted in this package. It's a secret key. Therefore if you transfer the key bytes in the network,
 // please take care of protecting the key or in fact all the bytes.
-func NewTOTP(account, issuer string, hash crypto.Hash, digits int) (*Totp, error) {
+func NewTOTP(account, issuer string, hash crypto.Hash, digits int, stepSize int) (*Totp, error) {
 
 	keySize := hash.Size()
 	key := make([]byte, keySize)
 	total, err := rand.Read(key)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("TOTP failed to create because there is not enough entropy, we got only %d random bytes", total))
+		return nil, fmt.Errorf("totp failed to create because there is not enough entropy, we got only %q random bytes", total)
 	}
 
 	// sanitize the digits range otherwise it may create invalid tokens !
@@ -94,19 +94,19 @@ func NewTOTP(account, issuer string, hash crypto.Hash, digits int) (*Totp, error
 		digits = 8
 	}
 
-	return makeTOTP(key, account, issuer, hash, digits)
+	return makeTOTP(key, account, issuer, hash, digits, stepSize)
 
 }
 
 // Private function which initialize the TOTP so that it's easier to unit test it
 // Used internally
-func makeTOTP(key []byte, account, issuer string, hash crypto.Hash, digits int) (*Totp, error) {
+func makeTOTP(key []byte, account, issuer string, hash crypto.Hash, digits int, stepSize int) (*Totp, error) {
 	otp := new(Totp)
 	otp.key = key
 	otp.account = account
 	otp.issuer = issuer
 	otp.digits = digits
-	otp.stepSize = 30 // we set it to 30 seconds which is the recommended value from the RFC
+	otp.stepSize = stepSize
 	otp.clientOffset = 0
 	otp.hashFunction = hash
 	return otp, nil
@@ -130,12 +130,12 @@ func (otp *Totp) Validate(userCode string) error {
 
 	// verify that the token is valid
 	if userCode == "" {
-		return errors.New("User provided token is empty")
+		return errors.New("user provided token is empty")
 	}
 
 	// check against the total amount of failures
 	if otp.totalVerificationFailures >= max_failures && !validBackoffTime(otp.lastVerificationTime) {
-		return LockDownError
+		return errorLockDown
 	}
 
 	if otp.totalVerificationFailures >= max_failures && validBackoffTime(otp.lastVerificationTime) {
@@ -178,7 +178,7 @@ func (otp *Totp) Validate(userCode string) error {
 	otp.lastVerificationTime = time.Now().UTC() // important to have it in UTC
 
 	// if we got here everything is good
-	return errors.New("Tokens mismatch.")
+	return errors.New("tokens mismatch")
 }
 
 // Checks the time difference between the function call time and the parameter
@@ -230,14 +230,10 @@ func calculateTOTP(otp *Totp, index int) string {
 	switch otp.hashFunction {
 	case crypto.SHA256:
 		h = hmac.New(sha256.New, otp.key)
-		break
 	case crypto.SHA512:
 		h = hmac.New(sha512.New, otp.key)
-		break
 	default:
 		h = hmac.New(sha1.New, otp.key)
-		break
-
 	}
 
 	// set the counter to the current step based ont the current time
@@ -302,13 +298,10 @@ func (otp *Totp) url() (string, error) {
 	switch otp.hashFunction {
 	case crypto.SHA256:
 		v.Add("algorithm", "SHA256")
-		break
 	case crypto.SHA512:
 		v.Add("algorithm", "SHA512")
-		break
 	default:
 		v.Add("algorithm", "SHA1")
-		break
 	}
 	u.RawQuery = v.Encode()
 	return u.String(), nil
@@ -440,13 +433,11 @@ func (otp *Totp) ToBytes() ([]byte, error) {
 		if _, err := buffer.Write(sha256Bytes[:]); err != nil {
 			return nil, err
 		}
-		break
 	case crypto.SHA512:
 		sha512Bytes := bigendian.ToInt(2)
 		if _, err := buffer.Write(sha512Bytes[:]); err != nil {
 			return nil, err
 		}
-		break
 	default:
 		sha1Bytes := bigendian.ToInt(0)
 		if _, err := buffer.Write(sha1Bytes[:]); err != nil {
@@ -593,10 +584,8 @@ func TOTPFromBytes(encryptedMessage []byte, issuer string) (*Totp, error) {
 	switch hashType {
 	case 1:
 		otp.hashFunction = crypto.SHA256
-		break
 	case 2:
 		otp.hashFunction = crypto.SHA512
-		break
 	default:
 		otp.hashFunction = crypto.SHA1
 	}
@@ -607,7 +596,7 @@ func TOTPFromBytes(encryptedMessage []byte, issuer string) (*Totp, error) {
 // this method checks the proper initialization of the Totp object
 func totpHasBeenInitialized(otp *Totp) error {
 	if otp == nil || otp.key == nil || len(otp.key) == 0 {
-		return initializationFailedError
+		return errorInitializationFailed
 	}
 	return nil
 }
